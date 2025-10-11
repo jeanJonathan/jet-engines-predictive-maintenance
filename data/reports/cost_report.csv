@@ -1,0 +1,6 @@
+Metric,Traditional,Predictive,Improvement
+Total Cost,"$2,000,000","$340,000","$1,660,000 (83.0%)"
+Scheduled Events,75,34,41
+Unscheduled Events,25,0,25 (100.0%)
+Operational Readiness (%),75.0,100.0,25.0pp
+Cost per Engine,"$20,000","$3,400","$16,600"
