@@ -2,7 +2,11 @@
 
 > Prédiction de la Remaining Useful Life (RUL) de moteurs aéronautiques turbofan à l’aide du dataset NASA C-MAPSS.  
 > Benchmark multi-modèles · Feature engineering · Analyse des coûts & ROI · Dashboard interactif
-
+<p align="center">
+  <img src="assets/fleet_overview.png" width="100%">
+</p>
+Vue globale de la flotte moteur avec classification des risques
+(HEALTHY / WARNING / CRITICAL) et analyse des erreurs de prédiction.
 ---
 
 ## Objectif
