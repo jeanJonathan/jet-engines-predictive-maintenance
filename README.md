@@ -8,7 +8,7 @@
 ## Objectif
 
 Les défaillances de moteurs aéronautiques provoquent des événements imprévus de type Aircraft-on-Ground (AOG), pouvant engendrer des pertes supérieures à **120 000 $ par jour** en maintenance d’urgence, retards opérationnels et pertes d’exploitation.
-
+https://aircargoweek.com/the-real-cost-of-aog/?
 L’objectif de ce projet est de développer un système de maintenance prédictive capable d’estimer le nombre de cycles de vol restants avant qu’un moteur nécessite une intervention de maintenance.
 
 Cette approche permet :
