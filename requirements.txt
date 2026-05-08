@@ -10,3 +10,4 @@ dash
 dash-bootstrap-components
 tqdm
 joblib
+xgboost
