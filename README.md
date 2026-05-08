@@ -6,7 +6,7 @@
 
 ## Objectif
 
-Les défaillances de moteurs aéronautiques provoquent des événements imprévus de type Aircraft-on-Ground (AOG), pouvant engendrer des pertes supérieures à **120 000 $ par jour** en maintenance d’urgence, retards opérationnels et pertes d’exploitation.
+Les défaillances de moteurs aéronautiques provoquent des événements imprévus de type d'AOG, pouvant engendrer des pertes supérieures à **120 000 $ par jour** en maintenance d’urgence, retards et pertes d’exploitation.
 https://aircargoweek.com/the-real-cost-of-aog/?
 L’objectif de ce projet est de développer un système de maintenance prédictive capable d’estimer le nombre de cycles de vol restants avant qu’un moteur nécessite une intervention de maintenance.
 
@@ -15,7 +15,7 @@ Cette approche permet :
 - de réduire les immobilisations imprévues,
 - d’améliorer la disponibilité opérationnelle de la flotte,
 - d’optimiser les coûts de maintenance,
-- et de passer d’une maintenance fixe traditionnelle à une maintenance intelligente pilotée par la donnée et l’intelligence artificielle.
+- et de passer d’une maintenance fixe traditionnelle à une maintenance intelligente pilotée par la donnée et l'IA.
 
 Le projet s’appuie sur plusieurs modèles de machine learning et deep learning afin de comparer leurs performances techniques, opérationnelles et économiques dans un contexte aéronautique réaliste.
 
@@ -127,6 +127,29 @@ Cette approche permet :
 - de mesurer la robustesse financière des modèles,
 - et d’évaluer les risques économiques dans un contexte réaliste.
 
+## Analyse Économique & ROI
+
+Le projet intègre une analyse financière complète permettant d’évaluer
+l’impact économique réel des stratégies de maintenance prédictive.
+
+L’objectif est de comparer :
+- une maintenance traditionnelle réactive,
+- avec des stratégies intelligentes pilotées par IA.
+
+Les analyses incluent :
+- coûts totaux de maintenance,
+- économies réalisées,
+- ROI,
+- disponibilité opérationnelle flotte,
+- analyse de sensibilité des seuils,
+- simulation Monte Carlo de l’incertitude industrielle.
+
+<p align="center">
+  <img src="./data/reports/cost_analysis.png" width="100%">
+</p>
+
+Cette approche permet d’évaluer non seulement les performances des modèles,
+mais également leur pertinence économique dans un contexte aéronautique réel.
 ---
 
 ## Installation & Exécution
@@ -378,8 +401,6 @@ et suivi des erreurs de prédiction.
 <p align="center">
   <img src="./assets/anomaly_table.png" width="100%">
 </p>
-
----
 
 ---
 
