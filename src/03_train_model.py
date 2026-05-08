@@ -183,7 +183,7 @@ X_train_flat = flatten(X_train)
 X_test_flat  = flatten(X_test)
 
 rf_model = RandomForestRegressor(
-    n_estimators=200,
+    n_estimators=50,
     max_depth=20,
     min_samples_split=5,
     random_state=42,
@@ -287,7 +287,7 @@ ax5b.grid(True, alpha=0.3)
 fig.suptitle('Model Benchmark — NASA C-MAPSS FD001 (RUL Prediction)', fontsize=14, fontweight='bold')
 plt.savefig(os.path.join(MODEL_PATH, 'benchmark_plot.png'), dpi=130, bbox_inches='tight')
 plt.close()
-print("[✓] benchmark_plot.png saved")
+print("benchmark_plot.png saved")
 
 # ─── Save benchmark JSON ──────────────────────────────────────────────────────
 benchmark = {}
