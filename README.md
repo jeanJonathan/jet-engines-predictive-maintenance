@@ -69,7 +69,7 @@ cmapss_project/
 │
 ├── requirements.txt
 └── README.md
-
+```
 
 ### 4. Analyse des Coûts & ROI (`05_cost_analysis.py`)
 
