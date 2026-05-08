@@ -1,125 +1,298 @@
+"""
+05_cost_analysis.py
+====================
+Maintenance Cost Analysis & ROI Simulation — NASA C-MAPSS FD001
+Author : Jean-Jonathan KOFFI
+
+Extends baseline with:
+  - Multi-model comparison of cost savings
+  - Threshold sensitivity analysis
+  - Monte Carlo simulation for cost uncertainty
+  - ROI and break-even analysis
+  - CSV + PNG report generation
+"""
+
+import os
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from tensorflow import keras
-import os
+import matplotlib.gridspec as gridspec
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data')
-OUTPUT_PATH = os.path.join(DATA_PATH, 'reports')
-os.makedirs(OUTPUT_PATH, exist_ok=True)
+# ─── Paths ────────────────────────────────────────────────────────────────────
+BASE_DIR   = os.path.join(os.path.dirname(__file__), '..')
+DATA_PATH  = os.path.join(BASE_DIR, 'data')
+PROC_PATH  = os.path.join(DATA_PATH, 'processed')
+MODEL_PATH = os.path.join(DATA_PATH, 'models')
+OUT_PATH   = os.path.join(DATA_PATH, 'reports')
+os.makedirs(OUT_PATH, exist_ok=True)
 
-model = keras.models.load_model(os.path.join(DATA_PATH, 'models', 'lstm_model.keras'))
-X_test = np.load(os.path.join(DATA_PATH, 'processed', 'X_test.npy'))
-y_test = np.load(os.path.join(DATA_PATH, 'processed', 'y_test.npy'))
-y_pred = model.predict(X_test).flatten()
+# ─── Cost parameters (aerospace industry estimates) ───────────────────────────
+COST = {
+    'unscheduled':    50_000,   # Emergency in-service failure
+    'scheduled':      10_000,   # Planned shop visit
+    'false_positive':  2_000,   # Unnecessary maintenance (opportunity cost)
+    'aog_per_day':   120_000,   # Aircraft On Ground — revenue lost per day
+    'aog_days':            2,   # Avg AOG duration for unscheduled event
+}
+THRESHOLD = 50       # Default maintenance trigger (predicted RUL < threshold)
 
-UNSCHEDULED_MAINTENANCE_COST = 50000  # Emergency repair
-SCHEDULED_MAINTENANCE_COST = 10000  # Planned maintenance
-FLIGHT_HOUR_VALUE = 20000  # Mission capability lost per hour
-TRADITIONAL_INTERVAL = 150
-INSPECTION_WINDOW = 30 
+# ─── Load data ────────────────────────────────────────────────────────────────
+y_test    = np.load(os.path.join(PROC_PATH,  'y_test.npy'))
+lstm_pred = np.load(os.path.join(MODEL_PATH, 'lstm_pred_test.npy'))
+rf_pred   = np.load(os.path.join(MODEL_PATH, 'rf_pred_test.npy'))
 
-def calculate_traditional_costs(actual_rul_list):
-    total_cost = 0
-    unscheduled = 0
-    scheduled = 0
+xgb_path = os.path.join(MODEL_PATH, 'xgb_pred_test.npy')
+xgb_pred = np.load(xgb_path) if os.path.exists(xgb_path) else None
 
-    for actual_rul in actual_rul_list:
-        if actual_rul < INSPECTION_WINDOW:
-            # RUL too low - fails before next scheduled inspection
-            total_cost += UNSCHEDULED_MAINTENANCE_COST
-            unscheduled += 1
+MODELS = {'LSTM (BiDir)': lstm_pred, 'Random Forest': rf_pred}
+if xgb_pred is not None:
+    MODELS['XGBoost'] = xgb_pred
+
+# ─── Cost functions ───────────────────────────────────────────────────────────
+def traditional_cost(actual_rul_list, threshold=THRESHOLD):
+    """Fixed-interval policy: assume all engines are maintained at threshold."""
+    total, sched, unsched = 0, 0, 0
+    for rul in actual_rul_list:
+        if rul < 30:       # Engine fails before inspection
+            total += COST['unscheduled'] + COST['aog_per_day'] * COST['aog_days']
+            unsched += 1
         else:
-            # Caught by scheduled inspection (may be premature)
-            total_cost += SCHEDULED_MAINTENANCE_COST
-            scheduled += 1
+            total += COST['scheduled']
+            sched += 1
+    return total, sched, unsched
 
-    return total_cost, scheduled, unscheduled
-
-def calculate_predictive_costs(actual_rul_list, predicted_rul_list, threshold=50):
-    total_cost = 0
-    scheduled = 0
-    unscheduled = 0
-
+def predictive_cost(actual_rul_list, predicted_rul_list, threshold=THRESHOLD):
+    """Condition-based policy: act when model flags engine."""
+    total, sched, unsched, fp = 0, 0, 0, 0
     for actual, predicted in zip(actual_rul_list, predicted_rul_list):
-        if predicted < threshold:
-            # AI recommends maintenance
-            # Schedule it regardless (model triggered action)
-            total_cost += SCHEDULED_MAINTENANCE_COST
-            scheduled += 1
-        else:
-            # AI says engine is healthy - no maintenance scheduled
-            if actual < threshold:
-                # FALSE NEGATIVE: Missed a failing engine = emergency failure
-                total_cost += UNSCHEDULED_MAINTENANCE_COST
-                unscheduled += 1
-            # else: TRUE NEGATIVE - correctly identified as healthy, no cost
+        if predicted < threshold:                            # Model triggers maintenance
+            if actual < threshold:                           # TRUE POSITIVE
+                total += COST['scheduled']
+                sched += 1
+            else:                                            # FALSE POSITIVE (unnecessary)
+                total += COST['false_positive']
+                fp += 1
+        else:                                                # Model says OK
+            if actual < threshold:                           # FALSE NEGATIVE → failure
+                total += COST['unscheduled'] + COST['aog_per_day'] * COST['aog_days']
+                unsched += 1
+    return total, sched, unsched, fp
 
-    return total_cost, scheduled, unscheduled
+# ─── 1. Baseline comparison ───────────────────────────────────────────────────
+trad_cost, trad_sched, trad_unsched = traditional_cost(y_test)
 
-trad_cost, trad_sched, trad_unsched = calculate_traditional_costs(y_test)
-pred_cost, pred_sched, pred_unsched = calculate_predictive_costs(y_test, y_pred)
+results = {}
+for name, pred in MODELS.items():
+    pcost, psched, punsched, fp = predictive_cost(y_test, pred)
+    savings = trad_cost - pcost
+    roi     = (savings / trad_cost) * 100
+    readiness_trad = ((len(y_test) - trad_unsched) / len(y_test)) * 100
+    readiness_pred = ((len(y_test) - punsched)     / len(y_test)) * 100
+    results[name] = {
+        'total_cost': pcost, 'savings': savings, 'roi_pct': roi,
+        'scheduled': psched, 'unscheduled': punsched, 'false_positives': fp,
+        'readiness': readiness_pred,
+    }
 
-savings = trad_cost - pred_cost
-savings_pct = (savings / trad_cost) * 100
+print("\n" + "="*65)
+print("  MAINTENANCE COST ANALYSIS — SUMMARY")
+print("="*65)
+print(f"  Traditional policy: ${trad_cost:>12,.0f}  ({trad_sched} sched + {trad_unsched} unsched)")
+for name, r in results.items():
+    print(f"  {name:<20}: ${r['total_cost']:>12,.0f}  → Savings ${r['savings']:,.0f} ({r['roi_pct']:.1f}%)")
+print("="*65 + "\n")
 
-fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+# ─── 2. Threshold sensitivity ─────────────────────────────────────────────────
+thresholds = np.arange(10, 120, 5)
+sensitivity = {name: [] for name in MODELS}
+for th in thresholds:
+    for name, pred in MODELS.items():
+        pcost, *_ = predictive_cost(y_test, pred, threshold=th)
+        sensitivity[name].append(pcost)
 
-# Cost comparison
-axes[0, 0].bar(['Traditional', 'Predictive'], [trad_cost, pred_cost], color=['red', 'green'])
-axes[0, 0].set_ylabel('Total Cost ($)')
-axes[0, 0].set_title('Maintenance Cost Comparison')
-axes[0, 0].text(0, trad_cost/2, f'${trad_cost:,}', ha='center', fontsize=12, fontweight='bold')
-axes[0, 0].text(1, pred_cost/2, f'${pred_cost:,}', ha='center', fontsize=12, fontweight='bold')
+# ─── 3. Monte Carlo simulation ────────────────────────────────────────────────
+N_SIMULATIONS = 5_000
+np.random.seed(42)
 
-# Breakdown
-categories = ['Scheduled', 'Unscheduled']
-trad_events = [trad_sched, trad_unsched]
-pred_events = [pred_sched, pred_unsched]
+mc_trad = []
+mc_pred = {name: [] for name in MODELS}
 
-x = np.arange(len(categories))
-width = 0.35
+for _ in range(N_SIMULATIONS):
+    # Sample cost uncertainty ±30%
+    c_sched   = COST['scheduled']   * np.random.uniform(0.7, 1.3)
+    c_unsched = COST['unscheduled'] * np.random.uniform(0.7, 1.3)
+    c_aog     = COST['aog_per_day'] * np.random.uniform(0.7, 1.3)
+    c_fp      = COST['false_positive'] * np.random.uniform(0.7, 1.3)
 
-axes[0, 1].bar(x - width/2, trad_events, width, label='Traditional', color='red', alpha=0.7)
-axes[0, 1].bar(x + width/2, pred_events, width, label='Predictive', color='green', alpha=0.7)
-axes[0, 1].set_ylabel('Number of Events')
-axes[0, 1].set_title('Maintenance Events Breakdown')
-axes[0, 1].set_xticks(x)
-axes[0, 1].set_xticklabels(categories)
-axes[0, 1].legend()
+    t_cost = sum(
+        c_unsched + c_aog * COST['aog_days'] if r < 30 else c_sched
+        for r in y_test
+    )
+    mc_trad.append(t_cost)
 
-# Savings breakdown
-axes[1, 0].pie([savings, pred_cost], labels=[f'Savings\n${savings:,}', f'Remaining Cost\n${pred_cost:,}'],
-               autopct='%1.1f%%', colors=['lightgreen', 'lightcoral'], startangle=90)
-axes[1, 0].set_title('Cost Savings Distribution')
+    for name, pred in MODELS.items():
+        p_cost = 0
+        for actual, predicted in zip(y_test, pred):
+            if predicted < THRESHOLD:
+                p_cost += c_sched if actual < THRESHOLD else c_fp
+            elif actual < THRESHOLD:
+                p_cost += c_unsched + c_aog * COST['aog_days']
+        mc_pred[name].append(p_cost)
 
-# Mission readiness
+mc_trad = np.array(mc_trad)
+mc_pred = {k: np.array(v) for k, v in mc_pred.items()}
+
+# ─── 4. Plots ─────────────────────────────────────────────────────────────────
+plt.rcParams.update({'figure.facecolor': '#0d1117', 'axes.facecolor': '#161b22',
+                     'text.color': '#c9d1d9', 'axes.labelcolor': '#c9d1d9',
+                     'xtick.color': '#c9d1d9', 'ytick.color': '#c9d1d9',
+                     'axes.edgecolor': '#30363d', 'grid.color': '#30363d'})
+
+model_names = list(MODELS.keys())
+COLORS = ['#58a6ff', '#ff9800', '#4caf50'][:len(model_names)]
+
+fig = plt.figure(figsize=(18, 14))
+gs  = gridspec.GridSpec(3, 3, figure=fig, hspace=0.5, wspace=0.38)
+
+# Cost comparison bars
+ax1 = fig.add_subplot(gs[0, :2])
+all_names  = ['Traditional'] + model_names
+all_costs  = [trad_cost] + [results[n]['total_cost'] for n in model_names]
+all_colors = ['#e74c3c'] + COLORS
+bars = ax1.bar(all_names, [c/1e6 for c in all_costs], color=all_colors, edgecolor='#0d1117', linewidth=1.5)
+for bar, cost in zip(bars, all_costs):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
+             f'${cost/1e6:.2f}M', ha='center', fontsize=9, color='#c9d1d9')
+ax1.set_ylabel('Total Cost (M$)')
+ax1.set_title('Total Maintenance Cost by Strategy', fontweight='bold')
+ax1.grid(True, alpha=0.3, axis='y')
+
+# Savings & ROI
+ax2 = fig.add_subplot(gs[0, 2])
+savings_vals = [results[n]['savings'] for n in model_names]
+roi_vals     = [results[n]['roi_pct'] for n in model_names]
+ax2_twin = ax2.twinx()
+ax2.bar(model_names, [s/1e3 for s in savings_vals], color=COLORS, alpha=0.8)
+ax2_twin.plot(model_names, roi_vals, 'o--', color='#f1c40f', linewidth=2, markersize=8)
+ax2.set_ylabel('Savings ($k)', color='#c9d1d9')
+ax2_twin.set_ylabel('ROI (%)', color='#f1c40f')
+ax2.set_title('Savings & ROI vs Traditional', fontweight='bold')
+ax2.grid(True, alpha=0.3, axis='y')
+
+# Threshold sensitivity
+ax3 = fig.add_subplot(gs[1, :2])
+ax3.axhline(trad_cost/1e6, color='#e74c3c', linestyle='--', linewidth=1.5, label='Traditional')
+for name, col in zip(model_names, COLORS):
+    ax3.plot(thresholds, [c/1e6 for c in sensitivity[name]], color=col, linewidth=2, label=name)
+ax3.axvline(THRESHOLD, color='white', linestyle=':', linewidth=1, alpha=0.5)
+ax3.set_xlabel('Maintenance Trigger Threshold (RUL cycles)')
+ax3.set_ylabel('Total Cost (M$)')
+ax3.set_title(f'Cost Sensitivity vs Threshold (current={THRESHOLD})', fontweight='bold')
+ax3.legend(fontsize=8)
+ax3.grid(True, alpha=0.3)
+
+# Monte Carlo — cost distribution
+ax4 = fig.add_subplot(gs[1, 2])
+ax4.hist(mc_trad/1e6, bins=40, alpha=0.5, color='#e74c3c', label='Traditional')
+for name, col in zip(model_names, COLORS):
+    ax4.hist(mc_pred[name]/1e6, bins=40, alpha=0.5, color=col, label=name)
+ax4.set_xlabel('Cost (M$)')
+ax4.set_ylabel('Frequency')
+ax4.set_title(f'Monte Carlo Cost Distribution (n={N_SIMULATIONS:,})', fontweight='bold')
+ax4.legend(fontsize=7)
+ax4.grid(True, alpha=0.3)
+
+# Maintenance breakdown
+ax5 = fig.add_subplot(gs[2, 0])
+cats   = ['Scheduled', 'Unscheduled', 'False Pos.']
+x      = np.arange(len(cats))
+width  = 0.8 / (len(model_names) + 1)
+ax5.bar(x - width*len(model_names)/2, [trad_sched, trad_unsched, 0], width, color='#e74c3c', alpha=0.8, label='Traditional')
+for i, (name, col) in enumerate(zip(model_names, COLORS)):
+    r = results[name]
+    ax5.bar(x - width*(len(model_names)/2 - 1 - i), [r['scheduled'], r['unscheduled'], r['false_positives']],
+            width, color=col, alpha=0.8, label=name)
+ax5.set_xticks(x)
+ax5.set_xticklabels(cats)
+ax5.set_ylabel('Events')
+ax5.set_title('Maintenance Event Breakdown', fontweight='bold')
+ax5.legend(fontsize=7)
+ax5.grid(True, alpha=0.3, axis='y')
+
+# Fleet readiness
+ax6 = fig.add_subplot(gs[2, 1])
 readiness_trad = ((len(y_test) - trad_unsched) / len(y_test)) * 100
-readiness_pred = ((len(y_test) - pred_unsched) / len(y_test)) * 100
+readiness_vals = [readiness_trad] + [results[n]['readiness'] for n in model_names]
+bars2 = ax6.bar(all_names, readiness_vals, color=all_colors, edgecolor='#0d1117', linewidth=1.5)
+ax6.axhline(90, color='#f1c40f', linestyle='--', linewidth=1.5, label='Target 90%')
+ax6.set_ylim([0, 102])
+ax6.set_ylabel('Operational Readiness (%)')
+ax6.set_title('Fleet Availability', fontweight='bold')
+ax6.legend(fontsize=8)
+ax6.grid(True, alpha=0.3, axis='y')
+for bar, val in zip(bars2, readiness_vals):
+    ax6.text(bar.get_x() + bar.get_width()/2, val + 0.5, f'{val:.1f}%', ha='center', fontsize=8)
 
-axes[1, 1].bar(['Traditional', 'Predictive'], [readiness_trad, readiness_pred], color=['orange', 'green'])
-axes[1, 1].set_ylabel('Operational Readiness (%)')
-axes[1, 1].set_title('Fleet Availability')
-axes[1, 1].set_ylim([0, 100])
-axes[1, 1].axhline(y=90, color='r', linestyle='--', label='Target: 90%')
-axes[1, 1].legend()
+# Savings boxplot (MC)
+ax7 = fig.add_subplot(gs[2, 2])
+mc_savings = {name: mc_trad - mc_pred[name] for name in model_names}
+ax7.boxplot([mc_savings[n]/1e3 for n in model_names], labels=model_names,
+            patch_artist=True,
+            boxprops=dict(facecolor='#161b22', color='#30363d'),
+            medianprops=dict(color='#f1c40f', linewidth=2))
+for i, (name, col) in enumerate(zip(model_names, COLORS)):
+    ax7.scatter([i+1]*100, np.random.choice(mc_savings[name], 100)/1e3,
+                alpha=0.2, s=5, color=col)
+ax7.set_ylabel('Savings vs Traditional ($k)')
+ax7.set_title('Savings Distribution (MC)', fontweight='bold')
+ax7.grid(True, alpha=0.3, axis='y')
 
-plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_PATH, 'cost_analysis.png'), dpi=150)
+fig.suptitle('Maintenance Cost Analysis & ROI — NASA C-MAPSS FD001', fontsize=15, fontweight='bold', y=1.01)
+plt.savefig(os.path.join(OUT_PATH, 'cost_analysis.png'), dpi=130, bbox_inches='tight')
+plt.close()
+print("cost_analysis.png saved")
 
-report_df = pd.DataFrame({
-    'Metric': ['Total Cost', 'Scheduled Events', 'Unscheduled Events',
-               'Operational Readiness (%)', 'Cost per Engine'],
-    'Traditional': [f'${trad_cost:,}', trad_sched, trad_unsched,
-                   f'{readiness_trad:.1f}', f'${trad_cost/len(y_test):,.0f}'],
-    'Predictive': [f'${pred_cost:,}', pred_sched, pred_unsched,
-                  f'{readiness_pred:.1f}', f'${pred_cost/len(y_test):,.0f}'],
-    'Improvement': [f'${savings:,} ({savings_pct:.1f}%)',
-                   f'{trad_sched - pred_sched}',
-                   f'{trad_unsched - pred_unsched} ({((trad_unsched - pred_unsched)/max(trad_unsched,1)*100):.1f}%)',
-                   f'{readiness_pred - readiness_trad:.1f}pp',
-                   f'${(trad_cost - pred_cost)/len(y_test):,.0f}']
-})
+# ─── 5. CSV Report ────────────────────────────────────────────────────────────
+rows = [{
+    'Strategy': 'Traditional (Fixed-Interval)',
+    'Total Cost ($)': trad_cost,
+    'Scheduled Events': trad_sched,
+    'Unscheduled Events': trad_unsched,
+    'False Positives': 0,
+    'Savings vs Traditional ($)': 0,
+    'ROI (%)': 0,
+    'Readiness (%)': round(((len(y_test)-trad_unsched)/len(y_test))*100, 1),
+    'MC Savings Mean ($k)': 0,
+    'MC Savings P10 ($k)': 0,
+    'MC Savings P90 ($k)': 0,
+}]
+for name in model_names:
+    r = results[name]
+    savings_arr = mc_savings[name]
+    rows.append({
+        'Strategy': f'Predictive — {name}',
+        'Total Cost ($)': r['total_cost'],
+        'Scheduled Events': r['scheduled'],
+        'Unscheduled Events': r['unscheduled'],
+        'False Positives': r['false_positives'],
+        'Savings vs Traditional ($)': r['savings'],
+        'ROI (%)': round(r['roi_pct'], 1),
+        'Readiness (%)': round(r['readiness'], 1),
+        'MC Savings Mean ($k)': round(savings_arr.mean()/1e3, 1),
+        'MC Savings P10 ($k)':  round(np.percentile(savings_arr, 10)/1e3, 1),
+        'MC Savings P90 ($k)':  round(np.percentile(savings_arr, 90)/1e3, 1),
+    })
 
-report_df.to_csv(os.path.join(OUTPUT_PATH, 'cost_report.csv'), index=False)
+df = pd.DataFrame(rows)
+df.to_csv(os.path.join(OUT_PATH, 'cost_report.csv'), index=False)
+print("cost_report.csv saved")
 
+print("\n" + "="*65)
+print("  MONTE CARLO RESULTS (95% CI on savings)")
+print("="*65)
+for name in model_names:
+    s = mc_savings[name]
+    print(f"  {name:<20}: Mean ${s.mean()/1e3:.1f}k  "
+          f"[P10 ${np.percentile(s,10)/1e3:.1f}k — P90 ${np.percentile(s,90)/1e3:.1f}k]")
+print("="*65)

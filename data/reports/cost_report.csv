@@ -1,6 +1,5 @@
-Metric,Traditional,Predictive,Improvement
-Total Cost,"$2,000,000","$340,000","$1,660,000 (83.0%)"
-Scheduled Events,75,34,41
-Unscheduled Events,25,0,25 (100.0%)
-Operational Readiness (%),75.0,100.0,25.0pp
-Cost per Engine,"$20,000","$3,400","$16,600"
+Strategy,Total Cost ($),Scheduled Events,Unscheduled Events,False Positives,Savings vs Traditional ($),ROI (%),Readiness (%),MC Savings Mean ($k),MC Savings P10 ($k),MC Savings P90 ($k)
+Traditional (Fixed-Interval),8000000,75,25,0,0,0.0,75.0,0.0,0.0,0.0
+Predictive — LSTM (BiDir),866000,28,2,3,7134000,89.2,98.0,7129.9,5793.3,8451.2
+Predictive — Random Forest,862000,28,2,1,7138000,89.2,98.0,7133.9,5797.0,8454.6
+Predictive — XGBoost,308000,30,0,4,7692000,96.2,100.0,7687.7,6234.1,9120.3
