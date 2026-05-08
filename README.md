@@ -2,11 +2,6 @@
 
 > Prédiction de la Remaining Useful Life (RUL) de moteurs aéronautiques turbofan à l’aide du dataset NASA C-MAPSS.  
 > Benchmark multi-modèles · Feature engineering · Analyse des coûts & ROI · Dashboard interactif
-<p align="center">
-  <img src="assets/fleet_overview.png" width="100%">
-</p>
-Vue globale de la flotte moteur avec classification des risques
-(HEALTHY / WARNING / CRITICAL) et analyse des erreurs de prédiction.
 ---
 
 ## Objectif
@@ -331,8 +326,60 @@ Plusieurs axes d’amélioration peuvent être envisagés :
 Data Analyst | Data Engineering & Industrial Data  
 Alternant — Safran Helicopter Engines
 
-- Portfolio : https://jeanjonathan.github.io/monPortfolio/
-- GitHub : https://github.com/jeanJonathan
+---
+
+## Dashboard Preview
+
+### Fleet Overview
+
+Vue globale de la flotte moteur avec classification des risques
+(HEALTHY / WARNING / CRITICAL) et analyse des erreurs de prédiction.
+
+<p align="center">
+  <img src="./assets/fleet_overview.png" width="100%">
+</p>
+
+---
+
+### Engine Detail
+
+Analyse détaillée d’un moteur avec :
+- prédiction RUL,
+- comparaison inter-modèles,
+- classification de risque,
+- analyse des écarts de prédiction.
+
+<p align="center">
+  <img src="./assets/engine_detail.png" width="100%">
+</p>
+
+---
+
+### Model Benchmark
+
+Comparaison des performances des modèles :
+- RMSE,
+- MAE,
+- R²,
+- NASA PHM Score,
+- temps d’entraînement.
+
+<p align="center">
+  <img src="./assets/model_benchmark.png" width="100%">
+</p>
+
+---
+
+### Anomaly Monitoring
+
+Supervision des moteurs critiques avec priorisation maintenance
+et suivi des erreurs de prédiction.
+
+<p align="center">
+  <img src="./assets/anomaly_table.png" width="100%">
+</p>
+
+---
 
 ---
 
